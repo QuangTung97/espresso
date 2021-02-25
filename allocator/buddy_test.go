@@ -7,7 +7,7 @@ import (
 )
 
 func TestBuddyInitSmallMemory(t *testing.T) {
-	data := make([]uint64, 1<<14)
+	data := make([]uint64, 1<<17)
 	var buddy Buddy
 	BuddyInit(&buddy, 12, 14, unsafe.Pointer(&data[0]))
 
@@ -15,7 +15,7 @@ func TestBuddyInitSmallMemory(t *testing.T) {
 }
 
 func TestBuddyBitSet(t *testing.T) {
-	data := make([]uint64, 1<<14)
+	data := make([]uint64, 1<<17)
 	var buddy Buddy
 	BuddyInit(&buddy, 12, 20, unsafe.Pointer(&data[0]))
 
@@ -36,7 +36,7 @@ func TestBuddyBitSet(t *testing.T) {
 }
 
 func TestBuddyInit(t *testing.T) {
-	data := make([]uint64, 1<<14)
+	data := make([]uint64, 1<<17)
 	var buddy Buddy
 
 	BuddyInit(&buddy, 12, 20, unsafe.Pointer(&data[0]))
@@ -89,7 +89,7 @@ func TestBuddyAllocateFromInit(t *testing.T) {
 
 	for _, e := range table {
 		t.Run(e.name, func(t *testing.T) {
-			data := make([]uint64, 1<<14)
+			data := make([]uint64, 1<<17)
 			var b Buddy
 			dataPtr := unsafe.Pointer(&data[0])
 			BuddyInit(&b, 12, 20, dataPtr)
@@ -115,7 +115,7 @@ func TestComputeRootAndNeighborAddr(t *testing.T) {
 }
 
 func TestBuddyAllocateDeallocate1(t *testing.T) {
-	data := make([]uint64, 1<<14)
+	data := make([]uint64, 1<<17)
 	var b Buddy
 	dataPtr := unsafe.Pointer(&data[0])
 	BuddyInit(&b, 12, 20, dataPtr)
@@ -167,7 +167,7 @@ func TestBuddyAllocateDeallocate1(t *testing.T) {
 }
 
 func TestBuddyAllocateDeallocate2(t *testing.T) {
-	data := make([]uint64, 1<<14)
+	data := make([]uint64, 1<<17)
 	var b Buddy
 	dataPtr := unsafe.Pointer(&data[0])
 	BuddyInit(&b, 12, 20, dataPtr)
@@ -197,7 +197,7 @@ func TestBuddyAllocateDeallocate2(t *testing.T) {
 }
 
 func TestBuddyAllocateDeallocate_NoRemain(t *testing.T) {
-	data := make([]uint64, 1<<14)
+	data := make([]uint64, 1<<17)
 	var b Buddy
 	dataPtr := unsafe.Pointer(&data[0])
 	BuddyInit(&b, 12, 20, dataPtr)
@@ -210,7 +210,7 @@ func TestBuddyAllocateDeallocate_NoRemain(t *testing.T) {
 }
 
 func TestBuddyAllocateDeallocate3(t *testing.T) {
-	data := make([]uint64, 1<<14)
+	data := make([]uint64, 1<<17)
 	var b Buddy
 	dataPtr := unsafe.Pointer(&data[0])
 	BuddyInit(&b, 12, 20, dataPtr)
@@ -237,7 +237,7 @@ func TestBuddyAllocateDeallocate3(t *testing.T) {
 }
 
 func TestBuddyAllocateDeallocate4(t *testing.T) {
-	data := make([]uint64, 1<<14)
+	data := make([]uint64, 1<<17)
 	var b Buddy
 	dataPtr := unsafe.Pointer(&data[0])
 	BuddyInit(&b, 12, 20, dataPtr)
@@ -302,7 +302,7 @@ func TestBuddyAllocateDeallocate4(t *testing.T) {
 }
 
 func TestBuddyAllocateDeallocate5(t *testing.T) {
-	data := make([]uint64, 1<<14)
+	data := make([]uint64, 1<<17)
 	var b Buddy
 	dataPtr := unsafe.Pointer(&data[0])
 	BuddyInit(&b, 12, 20, dataPtr)
@@ -368,7 +368,7 @@ func TestBuddyAllocateDeallocate5(t *testing.T) {
 
 func BenchmarkBuddy_Allocate(b *testing.B) {
 	for n := 0; n < b.N; n++ {
-		data := make([]uint64, 1<<14)
+		data := make([]uint64, 1<<17)
 		var buddy Buddy
 		dataPtr := unsafe.Pointer(&data[0])
 		BuddyInit(&buddy, 12, 20, dataPtr)

@@ -115,6 +115,10 @@ func (b *Buddy) contentOfList(order uint32) []uint32 {
 	return result
 }
 
+func (b *Buddy) ToRealAddr(addr uint32) unsafe.Pointer {
+	return unsafe.Pointer(uintptr(b.data) + uintptr(addr))
+}
+
 // Allocate ...
 func (b *Buddy) Allocate(sizeLog uint32) (uint32, bool) {
 	offset := sizeLog - b.minSize
