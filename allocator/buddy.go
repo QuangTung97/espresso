@@ -116,14 +116,14 @@ func (b *Buddy) contentOfList(order uint32) []uint32 {
 }
 
 // Allocate ...
-func (b *Buddy) Allocate(sizeLog uint32) uintptr {
+func (b *Buddy) Allocate(sizeLog uint32) (uint32, bool) {
 	offset := sizeLog - b.minSize
 	maxOffset := b.maxSize - b.minSize
 	emptyOffset := offset
 	for ; emptyOffset <= maxOffset && b.buckets[emptyOffset] == buddyNullPtr; emptyOffset++ {
 	}
 	if emptyOffset > maxOffset {
-		return 0
+		return 0, false
 	}
 
 	addrIndex := b.buckets[emptyOffset]
@@ -132,7 +132,7 @@ func (b *Buddy) Allocate(sizeLog uint32) uintptr {
 	b.clearBit(addrIndex)
 
 	if emptyOffset == offset {
-		return uintptr(b.data) + uintptr(addrIndex)
+		return addrIndex, true
 	}
 
 	for i := emptyOffset - 1; i >= offset; i-- {
@@ -143,7 +143,7 @@ func (b *Buddy) Allocate(sizeLog uint32) uintptr {
 		b.setBit(p)
 	}
 
-	return uintptr(b.data) + uintptr(addrIndex)
+	return addrIndex, true
 }
 
 func computeRootAndNeighborAddr(addr uint32, sizeLog uint32) (uint32, uint32) {
@@ -156,9 +156,8 @@ func computeRootAndNeighborAddr(addr uint32, sizeLog uint32) (uint32, uint32) {
 }
 
 // Deallocate ...
-func (b *Buddy) Deallocate(p uintptr, sizeLog uint32) {
+func (b *Buddy) Deallocate(addr uint32, sizeLog uint32) {
 	offset := sizeLog - b.minSize
-	addr := uint32(p - uintptr(b.data))
 
 	for sizeLog < b.maxSize {
 		rootAddr, neighborAddr := computeRootAndNeighborAddr(addr, sizeLog)
