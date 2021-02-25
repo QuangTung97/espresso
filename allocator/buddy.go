@@ -139,11 +139,11 @@ func (b *Buddy) Allocate(sizeLog uint32) (uint32, bool) {
 		return addrIndex, true
 	}
 
-	for i := emptyOffset - 1; i >= offset; i-- {
-		p := addrIndex + (1 << (i + b.minSize))
+	for i := int(emptyOffset) - 1; i >= int(offset); i-- {
+		p := addrIndex + (1 << (uint32(i) + b.minSize))
 		node := (*buddyListHead)(unsafe.Pointer(uintptr(b.data) + uintptr(p)))
 
-		buddyAddListHead(b.data, &b.buckets[i], i, node)
+		buddyAddListHead(b.data, &b.buckets[i], uint32(i), node)
 		b.setBit(p)
 	}
 
