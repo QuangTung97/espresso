@@ -11,11 +11,12 @@ const (
 
 // Buddy ...
 type Buddy struct {
-	minSize uint32
-	maxSize uint32
-	data    unsafe.Pointer
-	buckets []uint32
-	bitset  []uint64
+	minSize      uint32
+	maxSize      uint32
+	sizeMultiple uint32
+	data         unsafe.Pointer
+	buckets      []uint32
+	bitset       []uint64
 }
 
 type buddyListHead struct {
@@ -24,30 +25,58 @@ type buddyListHead struct {
 	bucketOffset uint32
 }
 
+func findSizeLogList(sizeMultiple uint32) []uint32 {
+	var result []uint32
+	for pos := uint32(0); sizeMultiple != 0; pos++ {
+		if sizeMultiple&0x1 != 0 {
+			result = append(result, pos)
+		}
+		sizeMultiple >>= 1
+	}
+	return result
+}
+
+func makeBitSet(sizeMultiple uint32) []uint64 {
+	if sizeMultiple <= 64 {
+		return make([]uint64, 1)
+	}
+	return make([]uint64, (sizeMultiple+63)>>6)
+}
+
+func clearBitSet(bitset []uint64) {
+	for i := range bitset {
+		bitset[i] = 0
+	}
+}
+
 // BuddyInit ...
-func BuddyInit(b *Buddy, minSizeLog uint32, maxSizeLog uint32, data unsafe.Pointer) {
+func BuddyInit(b *Buddy, minSizeLog uint32, sizeMultiple uint32, data unsafe.Pointer) {
+	sizeLogList := findSizeLogList(sizeMultiple)
+	last := sizeLogList[len(sizeLogList)-1]
+	maxSizeLog := last + minSizeLog
+
 	b.minSize = minSizeLog
 	b.maxSize = maxSizeLog
+	b.sizeMultiple = sizeMultiple
 	b.data = data
 	b.buckets = make([]uint32, maxSizeLog-minSizeLog+1)
 
-	last := maxSizeLog - minSizeLog
+	b.bitset = makeBitSet(sizeMultiple)
+	clearBitSet(b.bitset)
 
-	if last < 6 {
-		b.bitset = make([]uint64, 1)
-	} else {
-		b.bitset = make([]uint64, 1<<(last-6))
-	}
-
-	for i := uint32(0); i < last; i++ {
+	for i := uint32(0); i <= last; i++ {
 		b.buckets[i] = buddyNullPtr
 	}
-	b.buckets[last] = 0
-	b.bitset[0] = 1
 
-	header := (*buddyListHead)(b.data)
-	header.next = buddyNullPtr
-	header.prev = buddyNullPtr
+	addr := uint32(0)
+	for i := len(sizeLogList) - 1; i >= 0; i-- {
+		sizeLog := sizeLogList[i]
+		node := (*buddyListHead)(unsafe.Pointer(uintptr(data) + uintptr(addr)))
+		buddyAddListHead(data, &b.buckets[sizeLog], sizeLog, node)
+		b.setBit(addr)
+
+		addr += 1 << (sizeLog + minSizeLog)
+	}
 }
 
 func (b *Buddy) setBit(addr uint32) {
@@ -165,6 +194,9 @@ func (b *Buddy) Deallocate(addr uint32, sizeLog uint32) {
 
 	for sizeLog < b.maxSize {
 		rootAddr, neighborAddr := computeRootAndNeighborAddr(addr, sizeLog)
+		if (neighborAddr >> b.minSize) >= b.sizeMultiple {
+			break
+		}
 
 		if !b.isBitSet(neighborAddr) {
 			break

@@ -9,7 +9,7 @@ import (
 func TestSlab_Init(t *testing.T) {
 	data := make([]uint64, 1<<17)
 	var buddy Buddy
-	BuddyInit(&buddy, 12, 20, unsafe.Pointer(&data[0]))
+	BuddyInit(&buddy, 12, 1<<8, unsafe.Pointer(&data[0]))
 
 	slab := NewSlab(&buddy, 100, 12)
 	assert.Equal(t, &buddy, slab.buddy)
@@ -23,7 +23,7 @@ func TestSlab_Init(t *testing.T) {
 func TestSlab_Allocate_Deallocate(t *testing.T) {
 	data := make([]uint64, 1<<17)
 	var buddy Buddy
-	BuddyInit(&buddy, 12, 20, unsafe.Pointer(&data[0]))
+	BuddyInit(&buddy, 12, 1<<8, unsafe.Pointer(&data[0]))
 
 	slab := NewSlab(&buddy, 128, 12)
 
@@ -57,7 +57,7 @@ func TestSlab_Allocate_Deallocate(t *testing.T) {
 func TestSlab_Allocate_Deallocate2(t *testing.T) {
 	data := make([]uint64, 1<<17)
 	var buddy Buddy
-	BuddyInit(&buddy, 12, 20, unsafe.Pointer(&data[0]))
+	BuddyInit(&buddy, 12, 1<<8, unsafe.Pointer(&data[0]))
 
 	slab := NewSlab(&buddy, 1000, 12)
 
@@ -114,7 +114,7 @@ func TestSlab_Allocate_Deallocate2(t *testing.T) {
 func TestSlab_Allocate_Deallocate3(t *testing.T) {
 	data := make([]uint64, 1<<17)
 	var buddy Buddy
-	BuddyInit(&buddy, 12, 20, unsafe.Pointer(&data[0]))
+	BuddyInit(&buddy, 12, 1<<8, unsafe.Pointer(&data[0]))
 
 	slab := NewSlab(&buddy, 1000, 12)
 
@@ -187,7 +187,7 @@ func TestSlab_Allocate_Deallocate3(t *testing.T) {
 func TestSlab_Allocate_Full(t *testing.T) {
 	data := make([]uint64, 1<<10)
 	var buddy Buddy
-	BuddyInit(&buddy, 12, 13, unsafe.Pointer(&data[0]))
+	BuddyInit(&buddy, 12, 2, unsafe.Pointer(&data[0]))
 
 	slab := NewSlab(&buddy, 4000, 12)
 
@@ -223,7 +223,7 @@ func TestSlab_Allocate_Full(t *testing.T) {
 func BenchmarkSlab_Allocate_Deallocate_Interact_Buddy(b *testing.B) {
 	data := make([]uint64, 1<<20)
 	var buddy Buddy
-	BuddyInit(&buddy, 12, 23, unsafe.Pointer(&data[0]))
+	BuddyInit(&buddy, 12, 1<<11, unsafe.Pointer(&data[0]))
 
 	slab := NewSlab(&buddy, 100, 12)
 	for n := 0; n < b.N; n++ {
@@ -235,7 +235,7 @@ func BenchmarkSlab_Allocate_Deallocate_Interact_Buddy(b *testing.B) {
 func BenchmarkSlab_Allocate_Deallocate_Not_Interact_Buddy(b *testing.B) {
 	data := make([]uint64, 1<<20)
 	var buddy Buddy
-	BuddyInit(&buddy, 12, 23, unsafe.Pointer(&data[0]))
+	BuddyInit(&buddy, 12, 1<<11, unsafe.Pointer(&data[0]))
 
 	slab := NewSlab(&buddy, 100, 12)
 	slab.Allocate()

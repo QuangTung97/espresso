@@ -6,18 +6,55 @@ import (
 	"unsafe"
 )
 
+func TestFindSizeLogList(t *testing.T) {
+	table := []struct {
+		name         string
+		sizeMultiple uint32
+		result       []uint32
+	}{
+		{
+			name:         "single",
+			sizeMultiple: 1 << 8,
+			result:       []uint32{8},
+		},
+		{
+			name:         "multiple",
+			sizeMultiple: 1<<8 + 1<<7 + 1<<3 + 1,
+			result:       []uint32{0, 3, 7, 8},
+		},
+		{
+			name:         "max-4GB-12-bit-min-log",
+			sizeMultiple: 1 << 20,
+			result:       []uint32{20},
+		},
+	}
+
+	for _, e := range table {
+		t.Run(e.name, func(t *testing.T) {
+			result := findSizeLogList(e.sizeMultiple)
+			assert.Equal(t, e.result, result)
+		})
+	}
+}
+
 func TestBuddyInitSmallMemory(t *testing.T) {
 	data := make([]uint64, 1<<17)
 	var buddy Buddy
-	BuddyInit(&buddy, 12, 14, unsafe.Pointer(&data[0]))
 
+	BuddyInit(&buddy, 12, 63, unsafe.Pointer(&data[0]))
 	assert.Equal(t, 1, len(buddy.bitset))
+
+	BuddyInit(&buddy, 12, 64, unsafe.Pointer(&data[0]))
+	assert.Equal(t, 1, len(buddy.bitset))
+
+	BuddyInit(&buddy, 12, 65, unsafe.Pointer(&data[0]))
+	assert.Equal(t, 2, len(buddy.bitset))
 }
 
 func TestBuddyBitSet(t *testing.T) {
 	data := make([]uint64, 1<<17)
 	var buddy Buddy
-	BuddyInit(&buddy, 12, 20, unsafe.Pointer(&data[0]))
+	BuddyInit(&buddy, 12, 1<<8, unsafe.Pointer(&data[0]))
 
 	var bitset []uint64
 
@@ -39,7 +76,7 @@ func TestBuddyInit(t *testing.T) {
 	data := make([]uint64, 1<<17)
 	var buddy Buddy
 
-	BuddyInit(&buddy, 12, 20, unsafe.Pointer(&data[0]))
+	BuddyInit(&buddy, 12, 1<<8, unsafe.Pointer(&data[0]))
 
 	assert.Equal(t, uint32(12), buddy.minSize)
 	assert.Equal(t, uint32(20), buddy.maxSize)
@@ -92,7 +129,7 @@ func TestBuddyAllocateFromInit(t *testing.T) {
 			data := make([]uint64, 1<<17)
 			var b Buddy
 			dataPtr := unsafe.Pointer(&data[0])
-			BuddyInit(&b, 12, 20, dataPtr)
+			BuddyInit(&b, 12, 1<<8, dataPtr)
 
 			p, ok := b.Allocate(e.size)
 			assert.True(t, ok)
@@ -118,7 +155,7 @@ func TestBuddyAllocateDeallocate1(t *testing.T) {
 	data := make([]uint64, 1<<17)
 	var b Buddy
 	dataPtr := unsafe.Pointer(&data[0])
-	BuddyInit(&b, 12, 20, dataPtr)
+	BuddyInit(&b, 12, 1<<8, dataPtr)
 
 	var expectedBuckets []uint32
 
@@ -170,7 +207,7 @@ func TestBuddyAllocateDeallocate2(t *testing.T) {
 	data := make([]uint64, 1<<17)
 	var b Buddy
 	dataPtr := unsafe.Pointer(&data[0])
-	BuddyInit(&b, 12, 20, dataPtr)
+	BuddyInit(&b, 12, 1<<8, dataPtr)
 
 	var expectedBuckets []uint32
 
@@ -200,7 +237,7 @@ func TestBuddyAllocateDeallocate_NoRemain(t *testing.T) {
 	data := make([]uint64, 1<<17)
 	var b Buddy
 	dataPtr := unsafe.Pointer(&data[0])
-	BuddyInit(&b, 12, 20, dataPtr)
+	BuddyInit(&b, 12, 1<<8, dataPtr)
 
 	b.Allocate(19)
 	b.Allocate(19)
@@ -213,7 +250,7 @@ func TestBuddyAllocateDeallocate3(t *testing.T) {
 	data := make([]uint64, 1<<17)
 	var b Buddy
 	dataPtr := unsafe.Pointer(&data[0])
-	BuddyInit(&b, 12, 20, dataPtr)
+	BuddyInit(&b, 12, 1<<8, dataPtr)
 
 	p1, _ := b.Allocate(19)
 	p2, _ := b.Allocate(18)
@@ -240,7 +277,7 @@ func TestBuddyAllocateDeallocate4(t *testing.T) {
 	data := make([]uint64, 1<<17)
 	var b Buddy
 	dataPtr := unsafe.Pointer(&data[0])
-	BuddyInit(&b, 12, 20, dataPtr)
+	BuddyInit(&b, 12, 1<<8, dataPtr)
 
 	p1, _ := b.Allocate(19)
 	p2, _ := b.Allocate(18)
@@ -305,7 +342,7 @@ func TestBuddyAllocateDeallocate5(t *testing.T) {
 	data := make([]uint64, 1<<17)
 	var b Buddy
 	dataPtr := unsafe.Pointer(&data[0])
-	BuddyInit(&b, 12, 20, dataPtr)
+	BuddyInit(&b, 12, 1<<8, dataPtr)
 
 	p1, _ := b.Allocate(19)
 	p2, _ := b.Allocate(18)
@@ -366,12 +403,98 @@ func TestBuddyAllocateDeallocate5(t *testing.T) {
 	assert.Equal(t, []uint64{1, 0, 0, 0}, b.bitset)
 }
 
+func TestBuddy_Allocate_Deallocate_Not_Align(t *testing.T) {
+	data := make([]uint64, 1<<18)
+	var b Buddy
+	dataPtr := unsafe.Pointer(&data[0])
+	BuddyInit(&b, 12, 1<<8+1<<5+1, dataPtr)
+
+	var buckets []uint32
+
+	startBuckets := []uint32{
+		1<<20 + 1<<17, buddyNullPtr, buddyNullPtr, buddyNullPtr,
+		buddyNullPtr, 1 << 20, buddyNullPtr, buddyNullPtr,
+		0,
+	}
+	assert.Equal(t, startBuckets, b.buckets)
+	assert.Equal(t, []uint32{1<<20 + 1<<17}, b.contentOfList(12))
+	assert.Equal(t, []uint32{1 << 20}, b.contentOfList(17))
+	assert.Equal(t, []uint32{0}, b.contentOfList(20))
+	assert.Equal(t, []uint64{1, 0, 0, 0, 0x100000001}, b.bitset)
+
+	p1, ok := b.Allocate(12)
+	assert.True(t, ok)
+	assert.Equal(t, uint32(1<<20+1<<17), p1)
+
+	buckets = []uint32{
+		buddyNullPtr, buddyNullPtr, buddyNullPtr, buddyNullPtr,
+		buddyNullPtr, 1 << 20, buddyNullPtr, buddyNullPtr,
+		0,
+	}
+	assert.Equal(t, buckets, b.buckets)
+	assert.Equal(t, []uint32(nil), b.contentOfList(12))
+	assert.Equal(t, []uint32{1 << 20}, b.contentOfList(17))
+	assert.Equal(t, []uint32{0}, b.contentOfList(20))
+	assert.Equal(t, []uint64{1, 0, 0, 0, 1}, b.bitset)
+
+	b.Deallocate(p1, 12)
+	assert.Equal(t, startBuckets, b.buckets)
+	assert.Equal(t, []uint32{1<<20 + 1<<17}, b.contentOfList(12))
+	assert.Equal(t, []uint64{1, 0, 0, 0, 0x100000001}, b.bitset)
+
+	p2, ok := b.Allocate(17)
+	assert.True(t, ok)
+	assert.Equal(t, uint32(1<<20+1<<17), p1)
+
+	buckets = []uint32{
+		1<<20 + 1<<17, buddyNullPtr, buddyNullPtr, buddyNullPtr,
+		buddyNullPtr, buddyNullPtr, buddyNullPtr, buddyNullPtr,
+		0,
+	}
+	assert.Equal(t, buckets, b.buckets)
+	assert.Equal(t, []uint32{1<<20 + 1<<17}, b.contentOfList(12))
+	assert.Equal(t, []uint32(nil), b.contentOfList(17))
+	assert.Equal(t, []uint32{0}, b.contentOfList(20))
+	assert.Equal(t, []uint64{1, 0, 0, 0, 0x100000000}, b.bitset)
+
+	b.Deallocate(p2, 17)
+	assert.Equal(t, startBuckets, b.buckets)
+	assert.Equal(t, []uint64{1, 0, 0, 0, 0x100000001}, b.bitset)
+	assert.Equal(t, []uint32{1 << 20}, b.contentOfList(17))
+}
+
+func TestBuddy_Allocate_Deallocate_Not_Align2(t *testing.T) {
+	data := make([]uint64, 1<<18)
+	var b Buddy
+	dataPtr := unsafe.Pointer(&data[0])
+	BuddyInit(&b, 12, 1<<8+1<<7, dataPtr)
+
+	startBuckets := []uint32{
+		buddyNullPtr, buddyNullPtr, buddyNullPtr, buddyNullPtr,
+		buddyNullPtr, buddyNullPtr, buddyNullPtr, 1 << 20,
+		0,
+	}
+	assert.Equal(t, startBuckets, b.buckets)
+	assert.Equal(t, []uint32{1 << 20}, b.contentOfList(19))
+	assert.Equal(t, []uint32{0}, b.contentOfList(20))
+	assert.Equal(t, []uint64{1, 0, 0, 0, 1, 0}, b.bitset)
+
+	p1, ok := b.Allocate(19)
+	assert.True(t, ok)
+	assert.Equal(t, uint32(1<<20), p1)
+	assert.Equal(t, []uint64{1, 0, 0, 0, 0, 0}, b.bitset)
+
+	b.Deallocate(p1, 19)
+	assert.Equal(t, startBuckets, b.buckets)
+	assert.Equal(t, []uint64{1, 0, 0, 0, 1, 0}, b.bitset)
+}
+
 func BenchmarkBuddy_Allocate(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		data := make([]uint64, 1<<17)
 		var buddy Buddy
 		dataPtr := unsafe.Pointer(&data[0])
-		BuddyInit(&buddy, 12, 20, dataPtr)
+		BuddyInit(&buddy, 12, 1<<8, dataPtr)
 
 		for i := 0; i < 1000000; i++ {
 			p, _ := buddy.Allocate(16)
