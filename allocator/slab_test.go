@@ -219,3 +219,29 @@ func TestSlab_Allocate_Full(t *testing.T) {
 		buddyNullPtr, 0,
 	}, buddy.buckets)
 }
+
+func BenchmarkSlab_Allocate_Deallocate_Interact_Buddy(b *testing.B) {
+	data := make([]uint64, 1<<20)
+	var buddy Buddy
+	BuddyInit(&buddy, 12, 23, unsafe.Pointer(&data[0]))
+
+	slab := NewSlab(&buddy, 100, 12)
+	for n := 0; n < b.N; n++ {
+		p1, _ := slab.Allocate()
+		slab.Deallocate(p1)
+	}
+}
+
+func BenchmarkSlab_Allocate_Deallocate_Not_Interact_Buddy(b *testing.B) {
+	data := make([]uint64, 1<<20)
+	var buddy Buddy
+	BuddyInit(&buddy, 12, 23, unsafe.Pointer(&data[0]))
+
+	slab := NewSlab(&buddy, 100, 12)
+	slab.Allocate()
+
+	for n := 0; n < b.N; n++ {
+		p1, _ := slab.Allocate()
+		slab.Deallocate(p1)
+	}
+}
