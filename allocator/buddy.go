@@ -108,13 +108,13 @@ func (b *Buddy) contentOfList(order uint32) []uint32 {
 		if node.bucketOffset == offset {
 			result = append(result, addr)
 		}
-
 		addr = node.next
 	}
 
 	return result
 }
 
+// ToRealAddr ...
 func (b *Buddy) ToRealAddr(addr uint32) unsafe.Pointer {
 	return unsafe.Pointer(uintptr(b.data) + uintptr(addr))
 }

@@ -16,21 +16,206 @@ func TestSlab_Init(t *testing.T) {
 	assert.Equal(t, uint32(100), slab.elemSize)
 	assert.Equal(t, uint32(12), slab.chunkSizeLog)
 	assert.Equal(t, uint32((1<<12)/100), slab.numElemPerChunk)
-	assert.Equal(t, buddyNullPtr, slab.freeList)
+	assert.Equal(t, buddyNullPtr, slab.currentChunkAddr)
+	assert.Equal(t, uint32(0), slab.freeListIndex)
 }
 
-func TestSlab_Allocate(t *testing.T) {
+func TestSlab_Allocate_Deallocate(t *testing.T) {
 	data := make([]uint64, 1<<17)
 	var buddy Buddy
 	BuddyInit(&buddy, 12, 20, unsafe.Pointer(&data[0]))
 
 	slab := NewSlab(&buddy, 128, 12)
 
-	p, ok := slab.Allocate()
+	p1, ok := slab.Allocate()
 	assert.True(t, ok)
-	assert.Equal(t, uint32(0), p)
+	assert.Equal(t, uint32(0), p1)
+	assert.Equal(t, uint32(1), slab.freeListIndex)
 
-	p, ok = slab.Allocate()
+	p2, ok := slab.Allocate()
 	assert.True(t, ok)
-	assert.Equal(t, uint32(128), p)
+	assert.Equal(t, uint32(128), p2)
+	assert.Equal(t, uint32(2), slab.freeListIndex)
+
+	slab.SetElem(p2, []byte{1, 2, 3, 4})
+
+	movedAddr, needMove := slab.Deallocate(p1)
+	assert.Equal(t, uint32(1), slab.freeListIndex)
+	assert.True(t, needMove)
+	assert.Equal(t, uint32(128), movedAddr)
+
+	elem := slab.GetElem(p1)
+	assert.Equal(t, 128, len(elem))
+	assert.Equal(t, []byte{1, 2, 3, 4}, elem[:4])
+
+	movedAddr, needMove = slab.Deallocate(p1)
+	assert.Equal(t, uint32(0), slab.freeListIndex)
+	assert.False(t, needMove)
+	assert.Equal(t, uint32(0), movedAddr)
+}
+
+func TestSlab_Allocate_Deallocate2(t *testing.T) {
+	data := make([]uint64, 1<<17)
+	var buddy Buddy
+	BuddyInit(&buddy, 12, 20, unsafe.Pointer(&data[0]))
+
+	slab := NewSlab(&buddy, 1000, 12)
+
+	p1, ok := slab.Allocate()
+	assert.True(t, ok)
+	assert.Equal(t, uint32(0), p1)
+	assert.Equal(t, uint32(1), slab.freeListIndex)
+	assert.Equal(t, uint32(0), slab.currentChunkAddr)
+
+	p2, ok := slab.Allocate()
+	assert.True(t, ok)
+	assert.Equal(t, uint32(1000), p2)
+	assert.Equal(t, uint32(2), slab.freeListIndex)
+
+	p3, ok := slab.Allocate()
+	assert.True(t, ok)
+	assert.Equal(t, uint32(2000), p3)
+	assert.Equal(t, uint32(3), slab.freeListIndex)
+	assert.Equal(t, uint32(0), slab.currentChunkAddr)
+
+	p4, ok := slab.Allocate()
+	assert.True(t, ok)
+	assert.Equal(t, uint32(3000), p4)
+	assert.Equal(t, buddyNullPtr, slab.currentChunkAddr)
+	assert.Equal(t, uint32(0), slab.freeListIndex)
+
+	movedAddr, needMove := slab.Deallocate(p2)
+	assert.True(t, needMove)
+	assert.Equal(t, p4, movedAddr)
+
+	movedAddr, needMove = slab.Deallocate(p1)
+	assert.True(t, needMove)
+	assert.Equal(t, p3, movedAddr)
+
+	movedAddr, needMove = slab.Deallocate(p2)
+	assert.False(t, needMove)
+	assert.Equal(t, uint32(0), movedAddr)
+	assert.Equal(t, uint32(1), slab.freeListIndex)
+	assert.Equal(t, uint32(0), slab.currentChunkAddr)
+
+	movedAddr, needMove = slab.Deallocate(p1)
+	assert.False(t, needMove)
+	assert.Equal(t, uint32(0), movedAddr)
+	assert.Equal(t, uint32(0), slab.freeListIndex)
+	assert.Equal(t, buddyNullPtr, slab.currentChunkAddr)
+
+	assert.Equal(t, []uint32{
+		buddyNullPtr, buddyNullPtr, buddyNullPtr, buddyNullPtr,
+		buddyNullPtr, buddyNullPtr, buddyNullPtr, buddyNullPtr,
+		0,
+	}, buddy.buckets)
+}
+
+func TestSlab_Allocate_Deallocate3(t *testing.T) {
+	data := make([]uint64, 1<<17)
+	var buddy Buddy
+	BuddyInit(&buddy, 12, 20, unsafe.Pointer(&data[0]))
+
+	slab := NewSlab(&buddy, 1000, 12)
+
+	p1, ok := slab.Allocate()
+	assert.True(t, ok)
+	assert.Equal(t, uint32(0), p1)
+	assert.Equal(t, uint32(1), slab.freeListIndex)
+	assert.Equal(t, uint32(0), slab.currentChunkAddr)
+
+	p2, ok := slab.Allocate()
+	assert.True(t, ok)
+	assert.Equal(t, uint32(1000), p2)
+	assert.Equal(t, uint32(2), slab.freeListIndex)
+
+	p3, ok := slab.Allocate()
+	assert.True(t, ok)
+	assert.Equal(t, uint32(2000), p3)
+	assert.Equal(t, uint32(3), slab.freeListIndex)
+	assert.Equal(t, uint32(0), slab.currentChunkAddr)
+
+	p4, ok := slab.Allocate()
+	assert.True(t, ok)
+	assert.Equal(t, uint32(3000), p4)
+	assert.Equal(t, buddyNullPtr, slab.currentChunkAddr)
+	assert.Equal(t, uint32(0), slab.freeListIndex)
+
+	p5, ok := slab.Allocate()
+	assert.True(t, ok)
+	assert.Equal(t, uint32(1<<12), p5)
+	assert.Equal(t, uint32(1<<12), slab.currentChunkAddr)
+	assert.Equal(t, uint32(1), slab.freeListIndex)
+
+	movedAddr, needMove := slab.Deallocate(p2)
+	assert.True(t, needMove)
+	assert.Equal(t, p5, movedAddr)
+	assert.Equal(t, uint32(0), slab.freeListIndex)
+	assert.Equal(t, buddyNullPtr, slab.currentChunkAddr)
+
+	movedAddr, needMove = slab.Deallocate(p1)
+	assert.True(t, needMove)
+	assert.Equal(t, p4, movedAddr)
+	assert.Equal(t, uint32(3), slab.freeListIndex)
+	assert.Equal(t, uint32(0), slab.currentChunkAddr)
+
+	movedAddr, needMove = slab.Deallocate(p2)
+	assert.True(t, needMove)
+	assert.Equal(t, p3, movedAddr)
+	assert.Equal(t, uint32(2), slab.freeListIndex)
+	assert.Equal(t, uint32(0), slab.currentChunkAddr)
+
+	movedAddr, needMove = slab.Deallocate(p2)
+	assert.False(t, needMove)
+	assert.Equal(t, uint32(0), movedAddr)
+	assert.Equal(t, uint32(1), slab.freeListIndex)
+	assert.Equal(t, uint32(0), slab.currentChunkAddr)
+
+	movedAddr, needMove = slab.Deallocate(p1)
+	assert.False(t, needMove)
+	assert.Equal(t, uint32(0), movedAddr)
+	assert.Equal(t, uint32(0), slab.freeListIndex)
+	assert.Equal(t, buddyNullPtr, slab.currentChunkAddr)
+
+	assert.Equal(t, []uint32{
+		buddyNullPtr, buddyNullPtr, buddyNullPtr, buddyNullPtr,
+		buddyNullPtr, buddyNullPtr, buddyNullPtr, buddyNullPtr,
+		0,
+	}, buddy.buckets)
+}
+
+func TestSlab_Allocate_Full(t *testing.T) {
+	data := make([]uint64, 1<<10)
+	var buddy Buddy
+	BuddyInit(&buddy, 12, 13, unsafe.Pointer(&data[0]))
+
+	slab := NewSlab(&buddy, 4000, 12)
+
+	p1, ok := slab.Allocate()
+	assert.True(t, ok)
+	assert.Equal(t, uint32(0), p1)
+
+	p2, ok := slab.Allocate()
+	assert.True(t, ok)
+	assert.Equal(t, uint32(1<<12), p2)
+
+	p3, ok := slab.Allocate()
+	assert.False(t, ok)
+	assert.Equal(t, uint32(0), p3)
+
+	assert.Equal(t, []uint32{
+		buddyNullPtr, buddyNullPtr,
+	}, buddy.buckets)
+
+	moved, needMove := slab.Deallocate(p1)
+	assert.False(t, needMove)
+	assert.Equal(t, uint32(0), moved)
+
+	moved, needMove = slab.Deallocate(p2)
+	assert.False(t, needMove)
+	assert.Equal(t, uint32(0), moved)
+
+	assert.Equal(t, []uint32{
+		buddyNullPtr, 0,
+	}, buddy.buckets)
 }
