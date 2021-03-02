@@ -93,12 +93,12 @@ func TestAllocateData(t *testing.T) {
 			sizeMultiple: 20,
 			expected:     20 << 2,
 		},
-		{
-			name:         "5-GB",
-			minSizeLog:   12,
-			sizeMultiple: 5 << 18,
-			expected:     5 << 24,
-		},
+		//{
+		//	name:         "5-GB",
+		//	minSizeLog:   12,
+		//	sizeMultiple: 5 << 18,
+		//	expected:     5 << 24,
+		//},
 	}
 
 	for _, e := range table {
