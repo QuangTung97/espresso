@@ -19,7 +19,9 @@ type Allocator struct {
 	buddy Buddy
 	slabs []*Slab
 
-	memoryUsage int
+	slabSizeList []uint32
+
+	memoryUsage uint64
 }
 
 func findMinSizeLog(slabs []SlabConfig) uint32 {
@@ -56,7 +58,60 @@ func New(conf Config) *Allocator {
 		slabs = append(slabs, NewSlab(&result.buddy, slabConf.ElemSize, slabConf.ChunkSizeLog))
 	}
 	result.slabs = slabs
+
+	slabSizeList := make([]uint32, 0, len(conf.Slabs))
+	for _, s := range conf.Slabs {
+		slabSizeList = append(slabSizeList, s.ElemSize)
+	}
+	result.slabSizeList = slabSizeList
+
 	result.memoryUsage = 0
 
 	return result
+}
+
+func findSlabIndex(sizes []uint32, value uint32) int {
+	first := 0
+	last := len(sizes)
+	for first != last {
+		mid := (first + last) >> 1
+		if sizes[mid] < value {
+			first = mid + 1
+		} else {
+			last = mid
+		}
+	}
+	return first
+}
+
+// GetMemUsage ...
+func (a *Allocator) GetMemUsage() uint64 {
+	return a.memoryUsage
+}
+
+// Allocate ...
+func (a *Allocator) Allocate(size uint32) (uint32, bool) {
+	index := findSlabIndex(a.slabSizeList, size)
+	slab := a.slabs[index]
+
+	prevUsage := slab.GetMemUsage()
+	addr, ok := slab.Allocate()
+	nextUsage := slab.GetMemUsage()
+
+	a.memoryUsage += nextUsage - prevUsage
+	return addr, ok
+}
+
+// Deallocate ...
+func (a *Allocator) Deallocate(addr uint32, size uint32) (movedAddr uint32, needMove bool) {
+	index := findSlabIndex(a.slabSizeList, size)
+	slab := a.slabs[index]
+
+	prevUsage := slab.GetMemUsage()
+	movedAddr, needMove = slab.Deallocate(addr)
+	nextUsage := slab.GetMemUsage()
+
+	a.memoryUsage = a.memoryUsage - prevUsage + nextUsage
+
+	return
 }

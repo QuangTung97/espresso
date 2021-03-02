@@ -16,6 +16,7 @@ func TestSlab_Init(t *testing.T) {
 	assert.Equal(t, uint32(100), slab.elemSize)
 	assert.Equal(t, uint32(12), slab.chunkSizeLog)
 	assert.Equal(t, uint32((1<<12)/100), slab.numElemPerChunk)
+	assert.Equal(t, uint64(96), slab.unusedBytes)
 	assert.Equal(t, buddyNullPtr, slab.currentChunkAddr)
 	assert.Equal(t, uint32(0), slab.freeListIndex)
 }
@@ -123,59 +124,69 @@ func TestSlab_Allocate_Deallocate3(t *testing.T) {
 	assert.Equal(t, uint32(0), p1)
 	assert.Equal(t, uint32(1), slab.freeListIndex)
 	assert.Equal(t, uint32(0), slab.currentChunkAddr)
+	assert.Equal(t, uint64(96+1000), slab.GetMemUsage())
 
 	p2, ok := slab.Allocate()
 	assert.True(t, ok)
 	assert.Equal(t, uint32(1000), p2)
 	assert.Equal(t, uint32(2), slab.freeListIndex)
+	assert.Equal(t, uint64(96+2*1000), slab.GetMemUsage())
 
 	p3, ok := slab.Allocate()
 	assert.True(t, ok)
 	assert.Equal(t, uint32(2000), p3)
 	assert.Equal(t, uint32(3), slab.freeListIndex)
 	assert.Equal(t, uint32(0), slab.currentChunkAddr)
+	assert.Equal(t, uint64(96+3*1000), slab.GetMemUsage())
 
 	p4, ok := slab.Allocate()
 	assert.True(t, ok)
 	assert.Equal(t, uint32(3000), p4)
 	assert.Equal(t, buddyNullPtr, slab.currentChunkAddr)
 	assert.Equal(t, uint32(0), slab.freeListIndex)
+	assert.Equal(t, uint64(96+4*1000), slab.GetMemUsage())
 
 	p5, ok := slab.Allocate()
 	assert.True(t, ok)
 	assert.Equal(t, uint32(1<<12), p5)
 	assert.Equal(t, uint32(1<<12), slab.currentChunkAddr)
 	assert.Equal(t, uint32(1), slab.freeListIndex)
+	assert.Equal(t, uint64(96*2+5*1000), slab.GetMemUsage())
 
 	movedAddr, needMove := slab.Deallocate(p2)
 	assert.True(t, needMove)
 	assert.Equal(t, p5, movedAddr)
 	assert.Equal(t, uint32(0), slab.freeListIndex)
 	assert.Equal(t, buddyNullPtr, slab.currentChunkAddr)
+	assert.Equal(t, uint64(96+4*1000), slab.GetMemUsage())
 
 	movedAddr, needMove = slab.Deallocate(p1)
 	assert.True(t, needMove)
 	assert.Equal(t, p4, movedAddr)
 	assert.Equal(t, uint32(3), slab.freeListIndex)
 	assert.Equal(t, uint32(0), slab.currentChunkAddr)
+	assert.Equal(t, uint64(96+3*1000), slab.GetMemUsage())
 
 	movedAddr, needMove = slab.Deallocate(p2)
 	assert.True(t, needMove)
 	assert.Equal(t, p3, movedAddr)
 	assert.Equal(t, uint32(2), slab.freeListIndex)
 	assert.Equal(t, uint32(0), slab.currentChunkAddr)
+	assert.Equal(t, uint64(96+2*1000), slab.GetMemUsage())
 
 	movedAddr, needMove = slab.Deallocate(p2)
 	assert.False(t, needMove)
 	assert.Equal(t, uint32(0), movedAddr)
 	assert.Equal(t, uint32(1), slab.freeListIndex)
 	assert.Equal(t, uint32(0), slab.currentChunkAddr)
+	assert.Equal(t, uint64(96+1*1000), slab.GetMemUsage())
 
 	movedAddr, needMove = slab.Deallocate(p1)
 	assert.False(t, needMove)
 	assert.Equal(t, uint32(0), movedAddr)
 	assert.Equal(t, uint32(0), slab.freeListIndex)
 	assert.Equal(t, buddyNullPtr, slab.currentChunkAddr)
+	assert.Equal(t, uint64(0), slab.GetMemUsage())
 
 	assert.Equal(t, []uint32{
 		buddyNullPtr, buddyNullPtr, buddyNullPtr, buddyNullPtr,
@@ -194,14 +205,17 @@ func TestSlab_Allocate_Full(t *testing.T) {
 	p1, ok := slab.Allocate()
 	assert.True(t, ok)
 	assert.Equal(t, uint32(0), p1)
+	assert.Equal(t, uint64(96+4000), slab.GetMemUsage())
 
 	p2, ok := slab.Allocate()
 	assert.True(t, ok)
 	assert.Equal(t, uint32(1<<12), p2)
+	assert.Equal(t, uint64(96*2+2*4000), slab.GetMemUsage())
 
 	p3, ok := slab.Allocate()
 	assert.False(t, ok)
 	assert.Equal(t, uint32(0), p3)
+	assert.Equal(t, uint64(96*2+2*4000), slab.GetMemUsage())
 
 	assert.Equal(t, []uint32{
 		buddyNullPtr, buddyNullPtr,
@@ -210,10 +224,12 @@ func TestSlab_Allocate_Full(t *testing.T) {
 	moved, needMove := slab.Deallocate(p1)
 	assert.False(t, needMove)
 	assert.Equal(t, uint32(0), moved)
+	assert.Equal(t, uint64(96+4000), slab.GetMemUsage())
 
 	moved, needMove = slab.Deallocate(p2)
 	assert.False(t, needMove)
 	assert.Equal(t, uint32(0), moved)
+	assert.Equal(t, uint64(0), slab.GetMemUsage())
 
 	assert.Equal(t, []uint32{
 		buddyNullPtr, 0,

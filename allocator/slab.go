@@ -12,6 +12,8 @@ type Slab struct {
 	elemSize        uint32
 	chunkSizeLog    uint32
 	numElemPerChunk uint32
+	unusedBytes     uint64
+	memoryUsage     uint64
 
 	currentChunkAddr uint32
 	freeListIndex    uint32
@@ -24,6 +26,8 @@ func NewSlab(buddy *Buddy, elemSize uint32, chunkSizeLog uint32) *Slab {
 		elemSize:        elemSize,
 		chunkSizeLog:    chunkSizeLog,
 		numElemPerChunk: (1 << chunkSizeLog) / elemSize,
+		unusedBytes:     uint64((1 << chunkSizeLog) % elemSize),
+		memoryUsage:     0,
 
 		currentChunkAddr: buddyNullPtr,
 		freeListIndex:    0,
@@ -54,6 +58,7 @@ func (s *Slab) Allocate() (uint32, bool) {
 			return 0, false
 		}
 		s.currentChunkAddr = chunkAddr
+		s.memoryUsage += s.unusedBytes
 	}
 
 	result := s.currentChunkAddr + s.freeListIndex*s.elemSize
@@ -62,6 +67,7 @@ func (s *Slab) Allocate() (uint32, bool) {
 		s.freeListIndex = 0
 		s.currentChunkAddr = buddyNullPtr
 	}
+	s.memoryUsage += uint64(s.elemSize)
 
 	return result, true
 }
@@ -76,12 +82,15 @@ func (s *Slab) putBackChunkToBuddyIfFree() {
 	if s.freeListIndex == 0 {
 		s.buddy.Deallocate(s.currentChunkAddr, s.chunkSizeLog)
 		s.currentChunkAddr = buddyNullPtr
+		s.memoryUsage -= s.unusedBytes
 	}
 }
 
 // Deallocate can require move some item in an address to *addr*
 // Can NOT access the *movedAddr*, the content already in the *addr*
 func (s *Slab) Deallocate(addr uint32) (uint32, bool) {
+	s.memoryUsage -= uint64(s.elemSize)
+
 	if s.currentChunkAddr == buddyNullPtr {
 		mask := uint32(math.MaxUint32) << s.chunkSizeLog
 		s.currentChunkAddr = addr & mask
@@ -100,4 +109,9 @@ func (s *Slab) Deallocate(addr uint32) (uint32, bool) {
 	s.putBackChunkToBuddyIfFree()
 
 	return movedAddr, true
+}
+
+// GetMemUsage ...
+func (s *Slab) GetMemUsage() uint64 {
+	return s.memoryUsage
 }
