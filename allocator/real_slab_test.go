@@ -34,6 +34,8 @@ func TestRealSlab_Allocate_Deallocate(t *testing.T) {
 	assert.Equal(t, []uint32{1000, 2000, 3000}, slab.contentOfList())
 	assert.Equal(t, uint64(1000+96), slab.GetMemUsage())
 
+	assert.Equal(t, unsafe.Pointer(&data[0]), slab.ToRealAddr(p1))
+
 	p2, ok := slab.Allocate()
 	assert.True(t, ok)
 	assert.Equal(t, uint32(1000), p2)

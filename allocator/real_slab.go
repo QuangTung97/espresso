@@ -1,5 +1,7 @@
 package allocator
 
+import "unsafe"
+
 // RealSlab ...
 type RealSlab struct {
 	buddy           *Buddy
@@ -79,6 +81,11 @@ func (s *RealSlab) Deallocate(addr uint32) {
 	list := (*realSlabListHead)(s.buddy.ToRealAddr(addr))
 	list.next = s.freeList
 	s.freeList = addr
+}
+
+// ToRealAddr ...
+func (s *RealSlab) ToRealAddr(addr uint32) unsafe.Pointer {
+	return s.buddy.ToRealAddr(addr)
 }
 
 // GetMemUsage ...
