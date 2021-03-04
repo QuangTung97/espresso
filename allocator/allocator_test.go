@@ -109,9 +109,84 @@ func TestAllocateData(t *testing.T) {
 	}
 }
 
+func TestAllocatorValidateConfig(t *testing.T) {
+	table := []struct {
+		name     string
+		conf     Config
+		panicStr string
+	}{
+		{
+			name:     "zero-mem",
+			panicStr: "MemLimit must > 0",
+		},
+		{
+			name:     "negative-mem",
+			panicStr: "MemLimit must > 0",
+			conf: Config{
+				MemLimit: -1,
+			},
+		},
+		{
+			name:     "zero-lru-entry-size",
+			panicStr: "LRUEntrySize must > 0",
+			conf: Config{
+				MemLimit:     1,
+				LRUEntrySize: 0,
+			},
+		},
+		{
+			name:     "slab-config-empty",
+			panicStr: "Slabs list must not empty",
+			conf: Config{
+				MemLimit:     1,
+				LRUEntrySize: 8,
+			},
+		},
+		{
+			name:     "slab-elem-size",
+			panicStr: "ElemSize must > 0",
+			conf: Config{
+				MemLimit:     1,
+				LRUEntrySize: 8,
+				Slabs: []SlabConfig{
+					{},
+				},
+			},
+		},
+		{
+			name:     "slab-chunk-size-log",
+			panicStr: "ChunkSizeLog must > 0",
+			conf: Config{
+				MemLimit:     1,
+				LRUEntrySize: 8,
+				Slabs: []SlabConfig{
+					{
+						ElemSize: 1,
+					},
+				},
+			},
+		},
+	}
+
+	for _, e := range table {
+		t.Run(e.name, func(t *testing.T) {
+			defer func() {
+				v := recover()
+				if v != nil {
+					assert.Equal(t, v.(string), e.panicStr)
+				} else {
+					assert.Fail(t, "must panic")
+				}
+			}()
+			allocatorValidateConfig(e.conf)
+		})
+	}
+}
+
 func TestAllocatorNew(t *testing.T) {
 	conf := Config{
-		MemLimit: 1234 << 10,
+		MemLimit:     1234 << 10,
+		LRUEntrySize: 24,
 		Slabs: []SlabConfig{
 			{
 				ElemSize:     88,
@@ -146,6 +221,9 @@ func TestAllocatorNew(t *testing.T) {
 	assert.Equal(t, uint32(13), alloc.slabs[2].chunkSizeLog)
 
 	assert.Equal(t, uint64(0), alloc.memoryUsage)
+
+	assert.Equal(t, uint32(24), alloc.lruSlab.elemSize)
+	assert.Equal(t, uint32(12), alloc.lruSlab.chunkSizeLog)
 }
 
 func TestFindSlabIndex(t *testing.T) {
@@ -209,7 +287,8 @@ func TestFindSlabIndex(t *testing.T) {
 
 func TestAllocator_Allocate_Deallocate(t *testing.T) {
 	conf := Config{
-		MemLimit: 17 << 12,
+		MemLimit:     17 << 12,
+		LRUEntrySize: 16,
 		Slabs: []SlabConfig{
 			{
 				ElemSize:     88,

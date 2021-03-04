@@ -17,7 +17,8 @@ type LRU struct {
 	size uint32
 }
 
-type lruListHead struct {
+// ListHead ...
+type ListHead struct {
 	next uint32
 	prev uint32
 	hash uint64
@@ -39,7 +40,7 @@ func (l *LRU) getLRUList() []uint64 {
 	var result []uint64
 	n := l.next
 	for n != nullPtr {
-		head := (*lruListHead)(l.slab.ToRealAddr(n))
+		head := (*ListHead)(l.slab.ToRealAddr(n))
 		result = append(result, head.hash)
 		n = head.next
 	}
@@ -58,11 +59,11 @@ func (l *LRU) Put(hash uint64) (uint32, bool) {
 	}
 
 	l.size++
-	head := (*lruListHead)(l.slab.ToRealAddr(addr))
+	head := (*ListHead)(l.slab.ToRealAddr(addr))
 	head.hash = hash
 
 	if l.next != nullPtr {
-		next := (*lruListHead)(l.slab.ToRealAddr(l.next))
+		next := (*ListHead)(l.slab.ToRealAddr(l.next))
 		next.prev = addr
 	} else {
 		l.prev = addr
@@ -77,24 +78,24 @@ func (l *LRU) Put(hash uint64) (uint32, bool) {
 
 // Last ...
 func (l *LRU) Last() (uint32, uint64) {
-	last := (*lruListHead)(l.slab.ToRealAddr(l.prev))
+	last := (*ListHead)(l.slab.ToRealAddr(l.prev))
 	return l.prev, last.hash
 }
 
 // Delete ...
 func (l *LRU) Delete(addr uint32) {
 	l.size--
-	head := (*lruListHead)(l.slab.ToRealAddr(addr))
+	head := (*ListHead)(l.slab.ToRealAddr(addr))
 
 	if head.next != nullPtr {
-		next := (*lruListHead)(l.slab.ToRealAddr(head.next))
+		next := (*ListHead)(l.slab.ToRealAddr(head.next))
 		next.prev = head.prev
 	} else {
 		l.prev = head.prev
 	}
 
 	if head.prev != nullPtr {
-		prev := (*lruListHead)(l.slab.ToRealAddr(head.prev))
+		prev := (*ListHead)(l.slab.ToRealAddr(head.prev))
 		prev.next = head.next
 	} else {
 		l.next = head.next
@@ -104,17 +105,17 @@ func (l *LRU) Delete(addr uint32) {
 // Touch ...
 func (l *LRU) Touch(addr uint32) {
 	// Delete
-	head := (*lruListHead)(l.slab.ToRealAddr(addr))
+	head := (*ListHead)(l.slab.ToRealAddr(addr))
 
 	if head.next != nullPtr {
-		next := (*lruListHead)(l.slab.ToRealAddr(head.next))
+		next := (*ListHead)(l.slab.ToRealAddr(head.next))
 		next.prev = head.prev
 	} else {
 		l.prev = head.prev
 	}
 
 	if head.prev != nullPtr {
-		prev := (*lruListHead)(l.slab.ToRealAddr(head.prev))
+		prev := (*ListHead)(l.slab.ToRealAddr(head.prev))
 		prev.next = head.next
 	} else {
 		l.next = head.next
@@ -122,7 +123,7 @@ func (l *LRU) Touch(addr uint32) {
 
 	// Insert
 	if l.next != nullPtr {
-		next := (*lruListHead)(l.slab.ToRealAddr(l.next))
+		next := (*ListHead)(l.slab.ToRealAddr(l.next))
 		next.prev = addr
 	} else {
 		l.prev = addr

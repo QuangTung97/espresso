@@ -10,15 +10,18 @@ type SlabConfig struct {
 
 // Config ...
 type Config struct {
-	MemLimit int
-	Slabs    []SlabConfig
+	MemLimit     int
+	LRUEntrySize uint32
+	Slabs        []SlabConfig
 }
 
 // Allocator ...
 type Allocator struct {
 	buddy Buddy
-	slabs []*Slab
 
+	lruSlab *RealSlab
+
+	slabs        []*Slab
 	slabSizeList []uint32
 
 	memoryUsage uint64
@@ -43,8 +46,30 @@ func allocateData(minSizeLog uint32, sizeMultiple uint32) []uint64 {
 	return make([]uint64, sizeMultiple<<(minSizeLog-6))
 }
 
+func allocatorValidateConfig(conf Config) {
+	if conf.MemLimit <= 0 {
+		panic("MemLimit must > 0")
+	}
+	if conf.LRUEntrySize == 0 {
+		panic("LRUEntrySize must > 0")
+	}
+	if len(conf.Slabs) == 0 {
+		panic("Slabs list must not empty")
+	}
+	for _, s := range conf.Slabs {
+		if s.ElemSize == 0 {
+			panic("ElemSize must > 0")
+		}
+		if s.ChunkSizeLog == 0 {
+			panic("ChunkSizeLog must > 0")
+		}
+	}
+}
+
 // New ...
 func New(conf Config) *Allocator {
+	allocatorValidateConfig(conf)
+
 	minSizeLog := findMinSizeLog(conf.Slabs)
 	sizeMultiple := findSizeMultiple(minSizeLog, conf.MemLimit)
 
@@ -52,6 +77,8 @@ func New(conf Config) *Allocator {
 
 	result := &Allocator{}
 	BuddyInit(&result.buddy, minSizeLog, sizeMultiple, unsafe.Pointer(&data[0]))
+
+	result.lruSlab = NewRealSlab(&result.buddy, conf.LRUEntrySize, minSizeLog)
 
 	slabs := make([]*Slab, 0, len(conf.Slabs))
 	for _, slabConf := range conf.Slabs {
