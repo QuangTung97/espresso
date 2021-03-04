@@ -101,6 +101,38 @@ func (l *LRU) Delete(addr uint32) {
 	}
 }
 
+// Touch ...
+func (l *LRU) Touch(addr uint32) {
+	// Delete
+	head := (*lruListHead)(l.slab.ToRealAddr(addr))
+
+	if head.next != nullPtr {
+		next := (*lruListHead)(l.slab.ToRealAddr(head.next))
+		next.prev = head.prev
+	} else {
+		l.prev = head.prev
+	}
+
+	if head.prev != nullPtr {
+		prev := (*lruListHead)(l.slab.ToRealAddr(head.prev))
+		prev.next = head.next
+	} else {
+		l.next = head.next
+	}
+
+	// Insert
+	if l.next != nullPtr {
+		next := (*lruListHead)(l.slab.ToRealAddr(l.next))
+		next.prev = addr
+	} else {
+		l.prev = addr
+	}
+
+	head.next = l.next
+	head.prev = nullPtr
+	l.next = addr
+}
+
 // Size ...
 func (l *LRU) Size() uint32 {
 	return l.size
