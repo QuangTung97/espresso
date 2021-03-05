@@ -279,8 +279,8 @@ func TestPartition_LeaseGet(t *testing.T) {
 			},
 		},
 	}
-
 	p := NewPartition(conf)
+
 	result := p.leaseGet(1100, []byte{1, 2, 3})
 	assert.Equal(t, LeaseGetStatusLeaseGranted, result.Status)
 	assert.Equal(t, uint64(1), result.LeaseID)
@@ -298,4 +298,215 @@ func TestPartition_LeaseGet(t *testing.T) {
 	assert.Equal(t, uint64(0), result.LeaseID)
 	assert.Equal(t, uint32(3), p.sketch.Frequency(1100))
 	assert.Equal(t, []byte{10, 20, 30}, result.Value)
+}
+
+func TestPartition_Evict_From_Probation(t *testing.T) {
+	conf := PartitionConfig{
+		InitAdmissionLimit: 3,
+		ProtectedRatio:     NewRational(80, 100),
+		MinProtectedLimit:  50,
+		NumCounters:        100,
+		SketchMinCacheSize: 5,
+		AllocatorConfig: allocator.Config{
+			MemLimit:     16 << 12,
+			LRUEntrySize: lruEntrySize,
+			Slabs: []allocator.SlabConfig{
+				{
+					ElemSize:     40,
+					ChunkSizeLog: 12,
+				},
+				{
+					ElemSize:     80,
+					ChunkSizeLog: 12,
+				},
+			},
+		},
+	}
+	p := NewPartition(conf)
+
+	p.evict()
+
+	ok := p.putLease(1100, []byte{1, 2, 3}, 111)
+	p.sketch.Increase(1100)
+	assert.True(t, ok)
+
+	ok = p.putLease(2200, []byte{2, 3, 4}, 222)
+	p.sketch.Increase(2200)
+	assert.True(t, ok)
+
+	ok = p.putLease(3300, []byte{3, 4, 5}, 333)
+	p.sketch.Increase(3300)
+	assert.True(t, ok)
+
+	ok = p.putLease(4400, []byte{4, 5, 6}, 444)
+	p.sketch.Increase(4400)
+	assert.True(t, ok)
+
+	assert.Equal(t, []uint64{4400, 3300, 2200}, p.admission.GetLRUList())
+	assert.Equal(t, []uint64{1100}, p.probation.GetLRUList())
+
+	assert.Equal(t, uint32(1), p.sketch.Frequency(1100))
+	assert.Equal(t, uint32(1), p.sketch.Frequency(2200))
+	assert.Equal(t, uint32(1), p.sketch.Frequency(3300))
+	assert.Equal(t, uint32(1), p.sketch.Frequency(4400))
+
+	p.sketch.Increase(2200)
+	assert.Equal(t, uint32(1), p.sketch.Frequency(1100))
+	assert.Equal(t, uint32(2), p.sketch.Frequency(2200))
+
+	p.evict()
+	assert.Equal(t, []uint64{4400, 3300, 2200}, p.admission.GetLRUList())
+	assert.Equal(t, []uint64(nil), p.probation.GetLRUList())
+	content := map[uint64]uint32{
+		2200: 1<<12 + 40,
+		3300: 1<<12 + 2*40,
+		4400: 1 << 12,
+	}
+	assert.Equal(t, content, p.contentMap)
+}
+
+func TestPartition_Evict_From_Admission(t *testing.T) {
+	conf := PartitionConfig{
+		InitAdmissionLimit: 3,
+		ProtectedRatio:     NewRational(80, 100),
+		MinProtectedLimit:  50,
+		NumCounters:        100,
+		SketchMinCacheSize: 5,
+		AllocatorConfig: allocator.Config{
+			MemLimit:     16 << 12,
+			LRUEntrySize: lruEntrySize,
+			Slabs: []allocator.SlabConfig{
+				{
+					ElemSize:     40,
+					ChunkSizeLog: 12,
+				},
+				{
+					ElemSize:     80,
+					ChunkSizeLog: 12,
+				},
+			},
+		},
+	}
+	p := NewPartition(conf)
+
+	p.evict()
+
+	ok := p.putLease(1100, []byte{1, 2, 3}, 111)
+	p.sketch.Increase(1100)
+	assert.True(t, ok)
+
+	ok = p.putLease(2200, []byte{2, 3, 4}, 222)
+	p.sketch.Increase(2200)
+	assert.True(t, ok)
+
+	ok = p.putLease(3300, []byte{3, 4, 5}, 333)
+	p.sketch.Increase(3300)
+	assert.True(t, ok)
+
+	ok = p.putLease(4400, []byte{4, 5, 6}, 444)
+	p.sketch.Increase(4400)
+	assert.True(t, ok)
+
+	assert.Equal(t, []uint64{4400, 3300, 2200}, p.admission.GetLRUList())
+	assert.Equal(t, []uint64{1100}, p.probation.GetLRUList())
+
+	assert.Equal(t, uint32(1), p.sketch.Frequency(1100))
+	assert.Equal(t, uint32(1), p.sketch.Frequency(2200))
+	assert.Equal(t, uint32(1), p.sketch.Frequency(3300))
+	assert.Equal(t, uint32(1), p.sketch.Frequency(4400))
+
+	p.evict()
+	assert.Equal(t, []uint64{4400, 3300}, p.admission.GetLRUList())
+	assert.Equal(t, []uint64{1100}, p.probation.GetLRUList())
+	content := map[uint64]uint32{
+		1100: 1 << 12,
+		3300: 1<<12 + 2*40,
+		4400: 1<<12 + 1*40,
+	}
+	assert.Equal(t, content, p.contentMap)
+
+	getResult, _ := p.get(4400)
+	assert.Equal(t, uint64(4400), getResult.hash)
+	assert.Equal(t, uint64(444), getResult.leaseID)
+	assert.Equal(t, []byte{4, 5, 6}, getResult.key)
+	assert.Equal(t, lruListAdmission, getResult.lruList)
+	assert.Equal(t, []byte{}, getResult.value)
+
+	p.evict()
+	assert.Equal(t, []uint64{4400}, p.admission.GetLRUList())
+	assert.Equal(t, []uint64{1100}, p.probation.GetLRUList())
+	content = map[uint64]uint32{
+		1100: 1 << 12,
+		4400: 1<<12 + 1*40,
+	}
+	assert.Equal(t, content, p.contentMap)
+
+	p.evict()
+	assert.Equal(t, []uint64(nil), p.admission.GetLRUList())
+	assert.Equal(t, []uint64{1100}, p.probation.GetLRUList())
+	content = map[uint64]uint32{
+		1100: 1 << 12,
+	}
+	assert.Equal(t, content, p.contentMap)
+
+	p.evict()
+	assert.Equal(t, []uint64(nil), p.admission.GetLRUList())
+	assert.Equal(t, []uint64(nil), p.probation.GetLRUList())
+	content = map[uint64]uint32{}
+	assert.Equal(t, content, p.contentMap)
+}
+
+func TestPartition_Evict_Only_Admission(t *testing.T) {
+	conf := PartitionConfig{
+		InitAdmissionLimit: 3,
+		ProtectedRatio:     NewRational(80, 100),
+		MinProtectedLimit:  50,
+		NumCounters:        100,
+		SketchMinCacheSize: 5,
+		AllocatorConfig: allocator.Config{
+			MemLimit:     16 << 12,
+			LRUEntrySize: lruEntrySize,
+			Slabs: []allocator.SlabConfig{
+				{
+					ElemSize:     40,
+					ChunkSizeLog: 12,
+				},
+				{
+					ElemSize:     80,
+					ChunkSizeLog: 12,
+				},
+			},
+		},
+	}
+	p := NewPartition(conf)
+
+	p.evict()
+
+	ok := p.putLease(1100, []byte{1, 2, 3}, 111)
+	p.sketch.Increase(1100)
+	assert.True(t, ok)
+
+	ok = p.putLease(2200, []byte{2, 3, 4}, 222)
+	p.sketch.Increase(2200)
+	assert.True(t, ok)
+
+	ok = p.putLease(3300, []byte{3, 4, 5}, 333)
+	p.sketch.Increase(3300)
+	assert.True(t, ok)
+
+	assert.Equal(t, []uint64{3300, 2200, 1100}, p.admission.GetLRUList())
+	assert.Equal(t, []uint64(nil), p.probation.GetLRUList())
+
+	assert.Equal(t, uint32(1), p.sketch.Frequency(1100))
+	assert.Equal(t, uint32(1), p.sketch.Frequency(2200))
+	assert.Equal(t, uint32(1), p.sketch.Frequency(3300))
+
+	p.evict()
+	assert.Equal(t, []uint64{3300, 2200}, p.admission.GetLRUList())
+	assert.Equal(t, []uint64(nil), p.probation.GetLRUList())
+	content := map[uint64]uint32{
+		2200: 1<<12 + 1*40,
+		3300: 1 << 12,
+	}
+	assert.Equal(t, content, p.contentMap)
 }

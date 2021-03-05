@@ -129,7 +129,8 @@ func (a *Allocator) Allocate(size uint32) (uint32, bool) {
 	return addr, ok
 }
 
-// Deallocate ...
+// Deallocate can require move the item from *movedAddr* to *addr*
+// Can NOT access the *movedAddr*, the content already in the *addr*
 func (a *Allocator) Deallocate(addr uint32, size uint32) (movedAddr uint32, needMove bool) {
 	index := findSlabIndex(a.slabSizeList, size)
 	slab := a.slabs[index]

@@ -26,12 +26,16 @@ const (
 	lruListProbation lruListType = 2
 )
 
+// LeaseGetStatus ...
 type LeaseGetStatus uint32
 
 const (
-	LeaseGetStatusLeaseGranted  LeaseGetStatus = 1
+	// LeaseGetStatusLeaseGranted ...
+	LeaseGetStatusLeaseGranted LeaseGetStatus = 1
+	// LeaseGetStatusLeaseRejected ...
 	LeaseGetStatusLeaseRejected LeaseGetStatus = 2
-	LeaseGetStatusExisted       LeaseGetStatus = 3
+	// LeaseGetStatusExisted ...
+	LeaseGetStatusExisted LeaseGetStatus = 3
 )
 
 // PartitionConfig ...
@@ -57,6 +61,7 @@ type Partition struct {
 	probation *lru.LRU
 }
 
+// LeaseGetResult ...
 type LeaseGetResult struct {
 	Status  LeaseGetStatus
 	LeaseID uint64
@@ -176,6 +181,48 @@ func (p *Partition) putLease(hash uint64, key []byte, leaseID uint64) bool {
 	return true
 }
 
+func (p *Partition) evict() {
+	if p.admission.Size() == 0 && p.probation.Size() == 0 {
+		return
+	}
+
+	var lastAddr uint32
+	if p.probation.Size() == 0 {
+		admissionAddr, admissionHash := p.admission.Last()
+
+		p.admission.Delete(admissionAddr)
+		lastAddr = p.contentMap[admissionHash]
+		delete(p.contentMap, admissionHash)
+	} else if p.admission.Size() == 0 {
+		probationAddr, probationHash := p.probation.Last()
+
+		p.probation.Delete(probationAddr)
+		lastAddr = p.contentMap[probationHash]
+		delete(p.contentMap, probationHash)
+	} else {
+		admissionAddr, admissionHash := p.admission.Last()
+		probationAddr, probationHash := p.probation.Last()
+
+		if p.sketch.Frequency(admissionHash) <= p.sketch.Frequency(probationHash) {
+			p.admission.Delete(admissionAddr)
+			lastAddr = p.contentMap[admissionHash]
+			delete(p.contentMap, admissionHash)
+		} else {
+			p.probation.Delete(probationAddr)
+			lastAddr = p.contentMap[probationHash]
+			delete(p.contentMap, probationHash)
+		}
+	}
+
+	header := (*entryHeader)(p.allocator.ToRealAddr(lastAddr))
+	size := header.size
+
+	_, needMove := p.allocator.Deallocate(lastAddr, size)
+	if needMove {
+		p.contentMap[header.hash] = lastAddr
+	}
+}
+
 func (p *Partition) putValue(hash uint64, key []byte, version uint64, value []byte) bool {
 	entryAddr := p.contentMap[hash]
 	header := (*entryHeader)(p.allocator.ToRealAddr(entryAddr))
@@ -211,8 +258,8 @@ func (p *Partition) putValue(hash uint64, key []byte, version uint64, value []by
 	} else {
 		valueAddr := entryAddr + uint32(unsafe.Sizeof(entryHeader{})) + uint32(len(key))
 		valueLen := uint32(len(value))
-		bytes := p.getBytes(valueAddr, valueLen)
-		copy(bytes, value)
+		valueBytes := p.getBytes(valueAddr, valueLen)
+		copy(valueBytes, value)
 	}
 
 	header.size = newSize
