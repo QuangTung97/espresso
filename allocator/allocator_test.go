@@ -224,6 +224,7 @@ func TestAllocatorNew(t *testing.T) {
 
 	assert.Equal(t, uint32(24), alloc.lruSlab.elemSize)
 	assert.Equal(t, uint32(12), alloc.lruSlab.chunkSizeLog)
+	assert.NotNil(t, alloc.GetLRUSlab())
 }
 
 func TestFindSlabIndex(t *testing.T) {

@@ -142,3 +142,8 @@ func (a *Allocator) Deallocate(addr uint32, size uint32) (movedAddr uint32, need
 
 	return
 }
+
+// GetLRUSlab ...
+func (a *Allocator) GetLRUSlab() *RealSlab {
+	return a.lruSlab
+}
