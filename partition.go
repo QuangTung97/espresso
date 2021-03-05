@@ -1,8 +1,10 @@
 package espresso
 
 import (
+	"bytes"
 	"github.com/QuangTung97/espresso/allocator"
 	"github.com/QuangTung97/espresso/lru"
+	"github.com/QuangTung97/espresso/sketch"
 	"math"
 	"reflect"
 	"unsafe"
@@ -24,11 +26,21 @@ const (
 	lruListProbation lruListType = 2
 )
 
+type LeaseGetStatus uint32
+
+const (
+	LeaseGetStatusLeaseGranted  LeaseGetStatus = 1
+	LeaseGetStatusLeaseRejected LeaseGetStatus = 2
+	LeaseGetStatusExisted       LeaseGetStatus = 3
+)
+
 // PartitionConfig ...
 type PartitionConfig struct {
 	InitAdmissionLimit uint32
 	ProtectedRatio     Rational
 	MinProtectedLimit  uint32
+	NumCounters        uint64
+	SketchMinCacheSize uint64
 	AllocatorConfig    allocator.Config
 }
 
@@ -36,10 +48,19 @@ type PartitionConfig struct {
 type Partition struct {
 	allocator  *allocator.Allocator
 	contentMap map[uint64]uint32
+	sketch     *sketch.Sketch
+
+	leaseIDSeq uint64
 
 	admission *lru.LRU
 	protected *lru.LRU
 	probation *lru.LRU
+}
+
+type LeaseGetResult struct {
+	Status  LeaseGetStatus
+	LeaseID uint64
+	Value   []byte
 }
 
 type entryHeader struct {
@@ -52,12 +73,35 @@ type entryHeader struct {
 	lruList lruListType
 }
 
+func validatePartitionConfig(conf PartitionConfig) {
+	if conf.InitAdmissionLimit == 0 {
+		panic("InitAdmissionLimit must > 0")
+	}
+	if conf.ProtectedRatio.Denominator == 0 || conf.ProtectedRatio.Nominator == 0 {
+		panic("ProtectedRatio must not empty")
+	}
+	if conf.MinProtectedLimit == 0 {
+		panic("MinProtectedLimit must > 0")
+	}
+	if conf.NumCounters == 0 {
+		panic("NumCounters must > 0")
+	}
+	if conf.SketchMinCacheSize == 0 {
+		panic("SketchMinCacheSize must > 0")
+	}
+}
+
 // NewPartition ...
 func NewPartition(conf PartitionConfig) *Partition {
+	validatePartitionConfig(conf)
+
 	alloc := allocator.New(conf.AllocatorConfig)
 	return &Partition{
 		allocator:  alloc,
 		contentMap: map[uint64]uint32{},
+		sketch:     sketch.New(conf.NumCounters, conf.SketchMinCacheSize),
+
+		leaseIDSeq: 0,
 
 		admission: lru.New(alloc.GetLRUSlab(), conf.InitAdmissionLimit),
 		protected: lru.New(alloc.GetLRUSlab(), conf.MinProtectedLimit),
@@ -206,4 +250,44 @@ func (p *Partition) get(hash uint64) (getResult, bool) {
 		key:     p.getBytes(keyAddr, keyLen),
 		value:   p.getBytes(valueAddr, valueLen),
 	}, true
+}
+
+func (p *Partition) leaseGet(hash uint64, key []byte) LeaseGetResult {
+	p.sketch.Increase(hash)
+
+	result, existed := p.get(hash)
+	if !existed {
+		p.leaseIDSeq++
+
+		// Must NOT be false
+		ok := p.putLease(hash, key, p.leaseIDSeq)
+		assertTrue(ok)
+
+		return LeaseGetResult{
+			Status:  LeaseGetStatusLeaseGranted,
+			LeaseID: p.leaseIDSeq,
+		}
+	}
+
+	if !bytes.Equal(result.key, key) {
+		// TODO hash equals but key not equals
+		return LeaseGetResult{}
+	}
+
+	if result.status == entryStatusLeasing {
+		return LeaseGetResult{
+			Status: LeaseGetStatusLeaseRejected,
+		}
+	}
+
+	return LeaseGetResult{
+		Status: LeaseGetStatusExisted,
+		Value:  result.value,
+	}
+}
+
+func (p *Partition) leaseSet(hash uint64, key []byte, leaseID uint64, version uint64, value []byte) {
+	// TODO Must Not be false
+	ok := p.putValue(hash, key, version, value)
+	assertTrue(ok)
 }
