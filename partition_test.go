@@ -44,3 +44,31 @@ func TestNewPartition(t *testing.T) {
 	assert.NotNil(t, p.probation)
 	assert.Equal(t, uint32(math.MaxUint32), p.probation.Limit())
 }
+
+func TestPartition_PutLease(t *testing.T) {
+	conf := PartitionConfig{
+		InitAdmissionLimit: 123,
+		ProtectedRatio:     NewRational(80, 100),
+		MinProtectedLimit:  50,
+		AllocatorConfig: allocator.Config{
+			MemLimit:     16 << 12,
+			LRUEntrySize: uint32(unsafe.Sizeof(lru.ListHead{})),
+			Slabs: []allocator.SlabConfig{
+				{
+					ElemSize:     96,
+					ChunkSizeLog: 12,
+				},
+			},
+		},
+	}
+
+	p := NewPartition(conf)
+	ok := p.putLease(1100, []byte{1, 2, 3}, 22)
+	assert.True(t, ok)
+	assert.Equal(t, []uint64{1100}, p.admission.GetLRUList())
+	contentMap := map[uint64]uint32{
+		1100: 1 << 12,
+	}
+	assert.Equal(t, contentMap, p.contentMap)
+
+}

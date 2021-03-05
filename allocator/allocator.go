@@ -43,7 +43,7 @@ func findSizeMultiple(minSizeLog uint32, limit int) uint32 {
 }
 
 func allocateData(minSizeLog uint32, sizeMultiple uint32) []uint64 {
-	return make([]uint64, sizeMultiple<<(minSizeLog-6))
+	return make([]uint64, sizeMultiple<<(minSizeLog-3))
 }
 
 func allocatorValidateConfig(conf Config) {
@@ -146,4 +146,9 @@ func (a *Allocator) Deallocate(addr uint32, size uint32) (movedAddr uint32, need
 // GetLRUSlab ...
 func (a *Allocator) GetLRUSlab() *RealSlab {
 	return a.lruSlab
+}
+
+// ToRealAddr ...
+func (a *Allocator) ToRealAddr(addr uint32) unsafe.Pointer {
+	return a.buddy.ToRealAddr(addr)
 }

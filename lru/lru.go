@@ -36,7 +36,8 @@ func New(slab *allocator.RealSlab, limit uint32) *LRU {
 	}
 }
 
-func (l *LRU) getLRUList() []uint64 {
+// GetLRUList ...
+func (l *LRU) GetLRUList() []uint64 {
 	var result []uint64
 	n := l.next
 	for n != nullPtr {

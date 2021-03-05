@@ -85,19 +85,19 @@ func TestAllocateData(t *testing.T) {
 			name:         "normal",
 			minSizeLog:   6,
 			sizeMultiple: 20,
-			expected:     20,
+			expected:     160,
 		},
 		{
 			name:         "normal",
 			minSizeLog:   8,
 			sizeMultiple: 20,
-			expected:     20 << 2,
+			expected:     20 << 5,
 		},
 		//{
 		//	name:         "5-GB",
 		//	minSizeLog:   12,
 		//	sizeMultiple: 5 << 18,
-		//	expected:     5 << 24,
+		//	expected:     5 << 27,
 		//},
 	}
 
@@ -225,6 +225,8 @@ func TestAllocatorNew(t *testing.T) {
 	assert.Equal(t, uint32(24), alloc.lruSlab.elemSize)
 	assert.Equal(t, uint32(12), alloc.lruSlab.chunkSizeLog)
 	assert.NotNil(t, alloc.GetLRUSlab())
+
+	assert.Equal(t, alloc.buddy.ToRealAddr(123), alloc.ToRealAddr(123))
 }
 
 func TestFindSlabIndex(t *testing.T) {
