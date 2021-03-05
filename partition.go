@@ -43,11 +43,11 @@ type Partition struct {
 }
 
 type entryHeader struct {
-	size    uint32
-	keySize uint32
-	leaseID uint64 // or version
-	hash    uint64
-	lruAddr uint32
+	size    uint32 // size is the size of the whole entry (including header)
+	keySize uint32 // keySize is the size of key only
+	leaseID uint64 // leaseID or version
+	hash    uint64 // hash
+	lruAddr uint32 // address of LRU List Head
 	status  entryStatus
 	lruList lruListType
 }
@@ -128,6 +128,50 @@ func (p *Partition) putLease(hash uint64, key []byte, leaseID uint64) bool {
 	keyLen := header.keySize
 
 	copy(p.getBytes(keyAddr, keyLen), key)
+
+	return true
+}
+
+func (p *Partition) putValue(hash uint64, key []byte, version uint64, value []byte) bool {
+	entryAddr := p.contentMap[hash]
+	header := (*entryHeader)(p.allocator.ToRealAddr(entryAddr))
+	header.status = entryStatusValid
+	header.leaseID = version
+
+	newSize := uint32(unsafe.Sizeof(entryHeader{})) + uint32(len(key)) + uint32(len(value))
+
+	if p.allocator.GetSlabSize(header.size) != p.allocator.GetSlabSize(newSize) {
+		oldSize := header.size
+
+		newAddr, ok := p.allocator.Allocate(newSize)
+		if !ok {
+			// TODO loop until enough space
+			return false
+		}
+		newHeader := (*entryHeader)(p.allocator.ToRealAddr(newAddr))
+		*newHeader = *header
+		header = newHeader
+
+		p.contentMap[hash] = newAddr
+
+		keyAddr := newAddr + uint32(unsafe.Sizeof(entryHeader{}))
+		keyLen := uint32(len(key))
+		copy(p.getBytes(keyAddr, keyLen), key)
+
+		valueAddr := keyAddr + keyLen
+		valueLen := uint32(len(value))
+		copy(p.getBytes(valueAddr, valueLen), value)
+
+		p.allocator.Deallocate(entryAddr, oldSize)
+		// TODO need move
+	} else {
+		valueAddr := entryAddr + uint32(unsafe.Sizeof(entryHeader{})) + uint32(len(key))
+		valueLen := uint32(len(value))
+		bytes := p.getBytes(valueAddr, valueLen)
+		copy(bytes, value)
+	}
+
+	header.size = newSize
 
 	return true
 }
