@@ -61,6 +61,7 @@ func TestLRU_Put_Delete(t *testing.T) {
 	assert.Equal(t, p1, addr)
 	assert.Equal(t, uint64(2233), hash)
 	assert.Equal(t, uint32(3), l.Size())
+	assert.Equal(t, uint64(1000*3+96), l.slab.GetMemUsage())
 
 	l.Delete(p2)
 	assert.Equal(t, []uint64{4400, 2233}, l.GetLRUList())
@@ -68,6 +69,7 @@ func TestLRU_Put_Delete(t *testing.T) {
 	assert.Equal(t, p1, addr)
 	assert.Equal(t, uint64(2233), hash)
 	assert.Equal(t, uint32(2), l.Size())
+	assert.Equal(t, uint64(1000*2+96), l.slab.GetMemUsage())
 
 	l.Delete(p1)
 	assert.Equal(t, []uint64{4400}, l.GetLRUList())
@@ -75,10 +77,12 @@ func TestLRU_Put_Delete(t *testing.T) {
 	assert.Equal(t, p3, addr)
 	assert.Equal(t, uint64(4400), hash)
 	assert.Equal(t, uint32(1), l.Size())
+	assert.Equal(t, uint64(1000*1+96), l.slab.GetMemUsage())
 
 	l.Delete(p3)
 	assert.Equal(t, []uint64(nil), l.GetLRUList())
 	assert.Equal(t, uint32(0), l.Size())
+	assert.Equal(t, uint64(96), l.slab.GetMemUsage())
 }
 
 func TestLRU_Put_Limited(t *testing.T) {

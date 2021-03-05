@@ -101,6 +101,8 @@ func (l *LRU) Delete(addr uint32) {
 	} else {
 		l.next = head.next
 	}
+
+	l.slab.Deallocate(addr)
 }
 
 // Touch ...

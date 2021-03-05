@@ -110,8 +110,12 @@ func TestPartition_PutLease(t *testing.T) {
 
 	ok = p.putLease(4400, []byte{11, 12, 13}, 44)
 	assert.True(t, ok)
-	assert.Equal(t, []uint64{3300, 2200, 1100}, p.admission.GetLRUList())
-	assert.Equal(t, []uint64{4400}, p.probation.GetLRUList())
+	assert.Equal(t, []uint64{4400, 3300, 2200}, p.admission.GetLRUList())
+	assert.Equal(t, []uint64{1100}, p.probation.GetLRUList())
+
+	result, ok = p.get(1100)
+	assert.True(t, ok)
+	assert.Equal(t, lruListProbation, result.lruList)
 }
 
 func TestPartition_Update(t *testing.T) {

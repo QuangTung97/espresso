@@ -74,29 +74,37 @@ func (p *Partition) getBytes(addr uint32, length uint32) []byte {
 	return result
 }
 
+func assertTrue(b bool) {
+	if !b {
+		panic("must be true")
+	}
+}
+
 func (p *Partition) putLease(hash uint64, key []byte, leaseID uint64) bool {
 	size := uint32(unsafe.Sizeof(entryHeader{})) + uint32(len(key))
 
 	var lruAddr uint32
 	var lruList lruListType
 
-	if p.admission.Size() < p.admission.Limit() {
-		var ok bool
-		lruAddr, ok = p.admission.Put(hash)
-		if !ok {
-			// TODO loop until enough space
-			return false
-		}
-		lruList = lruListAdmission
-	} else {
-		var ok bool
-		lruAddr, ok = p.probation.Put(hash)
-		if !ok {
-			// TODO loop until enough space
-			return false
-		}
-		lruList = lruListProbation
+	for p.admission.Size() >= p.admission.Limit() {
+		lastAddr, lastHash := p.admission.Last()
+		p.admission.Delete(lastAddr)
+
+		// Can NOT be false here
+		lastAddr, ok := p.probation.Put(lastHash)
+		assertTrue(ok)
+
+		entryAddr := p.contentMap[lastHash]
+		header := (*entryHeader)(p.allocator.ToRealAddr(entryAddr))
+		header.lruList = lruListProbation
 	}
+
+	lruAddr, ok := p.admission.Put(hash)
+	if !ok {
+		// TODO loop until enough space
+		return false
+	}
+	lruList = lruListAdmission
 
 	addr, ok := p.allocator.Allocate(size)
 	if !ok {
