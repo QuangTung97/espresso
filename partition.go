@@ -4,7 +4,24 @@ import (
 	"github.com/QuangTung97/espresso/allocator"
 	"github.com/QuangTung97/espresso/lru"
 	"math"
+	"reflect"
 	"unsafe"
+)
+
+type entryStatus uint16
+
+const (
+	entryStatusLeasing entryStatus = 0
+	entryStatusValid   entryStatus = 1
+	entryStatusInvalid entryStatus = 2
+)
+
+type lruListType uint16
+
+const (
+	lruListAdmission lruListType = 0
+	lruListProtected lruListType = 1
+	lruListProbation lruListType = 2
 )
 
 // PartitionConfig ...
@@ -26,11 +43,13 @@ type Partition struct {
 }
 
 type entryHeader struct {
-	size             uint32
-	keySize          uint32
-	leaseIDOrVersion uint64
-	hash             uint64
-	lruAddr          uint32
+	size    uint32
+	keySize uint32
+	leaseID uint64 // or version
+	hash    uint64
+	lruAddr uint32
+	status  entryStatus
+	lruList lruListType
 }
 
 // NewPartition ...
@@ -46,12 +65,37 @@ func NewPartition(conf PartitionConfig) *Partition {
 	}
 }
 
+func (p *Partition) getBytes(addr uint32, length uint32) []byte {
+	var result []byte
+	header := (*reflect.SliceHeader)(unsafe.Pointer(&result))
+	header.Data = uintptr(p.allocator.ToRealAddr(addr))
+	header.Len = int(length)
+	header.Cap = int(length)
+	return result
+}
+
 func (p *Partition) putLease(hash uint64, key []byte, leaseID uint64) bool {
 	size := uint32(unsafe.Sizeof(entryHeader{})) + uint32(len(key))
-	lruAddr, ok := p.admission.Put(hash)
-	if !ok {
-		// TODO loop until enough space
-		return false
+
+	var lruAddr uint32
+	var lruList lruListType
+
+	if p.admission.Size() < p.admission.Limit() {
+		var ok bool
+		lruAddr, ok = p.admission.Put(hash)
+		if !ok {
+			// TODO loop until enough space
+			return false
+		}
+		lruList = lruListAdmission
+	} else {
+		var ok bool
+		lruAddr, ok = p.probation.Put(hash)
+		if !ok {
+			// TODO loop until enough space
+			return false
+		}
+		lruList = lruListProbation
 	}
 
 	addr, ok := p.allocator.Allocate(size)
@@ -63,12 +107,51 @@ func (p *Partition) putLease(hash uint64, key []byte, leaseID uint64) bool {
 
 	header := (*entryHeader)(p.allocator.ToRealAddr(addr))
 	*header = entryHeader{
-		size:             size,
-		keySize:          uint32(len(key)),
-		leaseIDOrVersion: leaseID,
-		hash:             hash,
-		lruAddr:          lruAddr,
+		size:    size,
+		keySize: uint32(len(key)),
+		leaseID: leaseID,
+		hash:    hash,
+		lruAddr: lruAddr,
+		status:  entryStatusLeasing,
+		lruList: lruList,
 	}
 
+	keyAddr := addr + uint32(unsafe.Sizeof(entryHeader{}))
+	keyLen := header.keySize
+
+	copy(p.getBytes(keyAddr, keyLen), key)
+
 	return true
+}
+
+type getResult struct {
+	status  entryStatus
+	lruList lruListType
+	leaseID uint64 // or version
+	hash    uint64
+	key     []byte
+	value   []byte
+}
+
+func (p *Partition) get(hash uint64) (getResult, bool) {
+	addr, ok := p.contentMap[hash]
+	if !ok {
+		return getResult{}, false
+	}
+	header := (*entryHeader)(p.allocator.ToRealAddr(addr))
+
+	keyAddr := addr + uint32(unsafe.Sizeof(entryHeader{}))
+	keyLen := header.keySize
+
+	valueAddr := keyAddr + keyLen
+	valueLen := header.size - uint32(unsafe.Sizeof(entryHeader{})) - keyLen
+
+	return getResult{
+		status:  header.status,
+		lruList: header.lruList,
+		hash:    header.hash,
+		leaseID: header.leaseID,
+		key:     p.getBytes(keyAddr, keyLen),
+		value:   p.getBytes(valueAddr, valueLen),
+	}, true
 }

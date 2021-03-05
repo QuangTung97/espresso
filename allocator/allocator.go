@@ -152,3 +152,8 @@ func (a *Allocator) GetLRUSlab() *RealSlab {
 func (a *Allocator) ToRealAddr(addr uint32) unsafe.Pointer {
 	return a.buddy.ToRealAddr(addr)
 }
+
+// GetSlabSize ...
+func (a *Allocator) GetSlabSize(size uint32) uint32 {
+	return a.slabSizeList[findSlabIndex(a.slabSizeList, size)]
+}

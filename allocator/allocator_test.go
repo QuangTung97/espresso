@@ -285,7 +285,34 @@ func TestFindSlabIndex(t *testing.T) {
 			assert.Equal(t, e.expected, result)
 		})
 	}
+}
 
+func TestAllocator_GetSlabSize(t *testing.T) {
+	conf := Config{
+		MemLimit:     17 << 12,
+		LRUEntrySize: 16,
+		Slabs: []SlabConfig{
+			{
+				ElemSize:     48,
+				ChunkSizeLog: 12,
+			},
+			{
+				ElemSize:     96,
+				ChunkSizeLog: 12,
+			},
+			{
+				ElemSize:     128,
+				ChunkSizeLog: 13,
+			},
+		},
+	}
+	a := New(conf)
+
+	assert.Equal(t, uint32(48), a.GetSlabSize(0))
+	assert.Equal(t, uint32(48), a.GetSlabSize(1))
+	assert.Equal(t, uint32(48), a.GetSlabSize(48))
+	assert.Equal(t, uint32(96), a.GetSlabSize(49))
+	assert.Equal(t, uint32(128), a.GetSlabSize(97))
 }
 
 func TestAllocator_Allocate_Deallocate(t *testing.T) {
